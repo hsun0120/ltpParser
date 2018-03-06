@@ -18,7 +18,7 @@ import javax.net.ssl.HttpsURLConnection;
  * @since 03-05-2018
  */
 public class CloudParser {
-	static final String URL = "api_key=%s&text=%s&pattern=all&format=json";
+	static final String PARAM = "api_key=%s&text=%s&pattern=all&format=json";
 
 	private String key = null;
 
@@ -46,11 +46,12 @@ public class CloudParser {
 		try {
 			URL base = new URL("https://api.ltp-cloud.com/analysis/");
 			HttpsURLConnection con = (HttpsURLConnection)base.openConnection();
+			con.setRequestMethod("POST");
 			con.setDoOutput(true); 
 			con.setDoInput(true);
 
 			DataOutputStream output = new DataOutputStream(con.getOutputStream());
-			String query = String.format(URL, this.key, text);
+			String query = String.format(PARAM, this.key, text);
 			output.write(query.getBytes(StandardCharsets.UTF_8));
 			BufferedReader reader = new  BufferedReader(new InputStreamReader
 					(con.getInputStream(), StandardCharsets.UTF_8)); 

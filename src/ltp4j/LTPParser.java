@@ -55,7 +55,7 @@ public class LTPParser {
     parser.release();
     
     SRL srl = new SRL();
-    srl.create("ltp_data_v3.4.0");
+    srl.create("ltp_data_v3.4.0/srl");
     List<Pair<Integer, List<Pair<String, Pair<Integer, Integer>>>>> srls = 
     		new ArrayList<>();
     srl.srl(words, tags, ners, heads, deprels, srls);

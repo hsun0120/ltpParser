@@ -19,9 +19,9 @@ import javax.net.ssl.HttpsURLConnection;
  */
 public class CloudParser {
 	static final String URL = "api_key=%s&text=%s&pattern=all&format=json";
-	
+
 	private String key = null;
-	
+
 	/**
 	 * Import api key from file.
 	 * @param path - path to the file containing api key
@@ -33,7 +33,7 @@ public class CloudParser {
 			e.printStackTrace();
 		}
 	}
-	
+
 	/**
 	 * Post request to ltp cloud server and get json output.
 	 * @param text - text to annotate
@@ -42,14 +42,13 @@ public class CloudParser {
 	public String postRequest(String text) {
 		if(this.key == null)
 			return null;
-		
+
 		try {
 			URL base = new URL("https://api.ltp-cloud.com/analysis/");
 			HttpsURLConnection con = (HttpsURLConnection)base.openConnection();
-			//con.setRequestProperty("User-Agent", "Mozilla/4.0 (compatible; MSIE 5.0;Windows98;DigExt)");
 			con.setDoOutput(true); 
 			con.setDoInput(true);
-			
+
 			DataOutputStream output = new DataOutputStream(con.getOutputStream());
 			String query = String.format(URL, this.key, text);
 			output.write(query.getBytes(StandardCharsets.UTF_8));
@@ -66,7 +65,7 @@ public class CloudParser {
 		}
 		return null;
 	}
-	
+
 	public static void main(String[] args) {
 		CloudParser ltpCloud = new CloudParser();
 		ltpCloud.importKey("api.key");

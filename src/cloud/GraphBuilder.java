@@ -134,7 +134,7 @@ public class GraphBuilder implements AutoCloseable{
 	//TODO
 	private void createSRL(JSONArray sentence, ArrayList<JSONObject> srl, 
 			String section, int sentenceNum) {
-		
+		HashMap<Interval, Integer> map = new HashMap<>();
 	}
 	
 	private void createSRlen(JSONArray sentence, JSONObject node, String 
@@ -164,6 +164,23 @@ public class GraphBuilder implements AutoCloseable{
 	@Override
 	public void close() throws Exception {
 		this.driver.close();
+	}
+	
+	private class Interval {
+		private int start;
+		private int end;
+		
+		private Interval(int start, int end) {
+			this.start = start;
+			this.end = end;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if(o instanceof Interval && ((Interval) o).start == this.start && 
+					((Interval) o).end == this.end) return true;
+			return false;
+		}
 	}
 	
 	public static void main(String args[]) {

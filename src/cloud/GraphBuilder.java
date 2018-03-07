@@ -20,8 +20,9 @@ public class GraphBuilder implements AutoCloseable{
 	static final int MAX_LENGTH = 5000;
 	static final String ROOT = "CREATE (n:Root:%s {uid: %d, idx: -1, "
 			+ "sentenceNum: %d})"; //Label: section
+	/* Labels: section, postag, ner  */
 	static final String WORDNODE = "MERGE (n:wordNode:%s:%s:`%s` {uid: %d, idx: "
-			+ "%d, text: '%s', sentenceNum: %d})"; //Labels: section, postag, ner 
+			+ "%d, text: '%s', sentenceNum: %d, docID: %s, type: %s, year: %d})";
 	static final String NEXT_RELN = "MATCH (a {uid: %d}), (b {uid: %d}) MERGE "
 			+ "(a)-[:NEXT]->(b)";
 	static final String SRELN = "MATCH (a {uid: %d}), (b {uid: %d}) MERGE "
@@ -51,8 +52,12 @@ public class GraphBuilder implements AutoCloseable{
 	 * Parse and injest text by section.
 	 * @param text - text to parse
 	 * @param section - section of the document
+	 * @param docId - document ID
+	 * @param type - court case type
+	 * @param year - year of document
 	 */
-	public void ingest(String text, String section) {
+	public void ingest(String text, String section, String docId, String type, 
+			int year) {
 		if(text == null || text.length() == 0) return;
 		
 		ArrayList<String> parsed = this.preprocess(text);
@@ -69,7 +74,8 @@ public class GraphBuilder implements AutoCloseable{
 					/* Iterate over a sentence */
 					for(int k = 0; k < sentence.length(); k++) {
 						JSONObject node = sentence.getJSONObject(k);
-						this.createRelns(node, section, sentence, sentenceNum, map);
+						this.createRelns(node, section, sentence, sentenceNum, docId, type, 
+								year, map);
 						if(node.getJSONArray("arg").length() > 0)
 							srl.add(node);
 					}
@@ -104,7 +110,8 @@ public class GraphBuilder implements AutoCloseable{
 	}
 	
 	private void createRelns(JSONObject node, String section, JSONArray sentence,
-			int sentenceNum, HashMap<Integer, Integer> map) {
+			int sentenceNum, String docId, String type, int year, HashMap<Integer, 
+			Integer> map) {
 		try (Session session = driver.session()) {
 			/* Create current node if not exists */
 			if(!map.containsKey(new Integer(node.getInt("id")))) {
@@ -137,11 +144,11 @@ public class GraphBuilder implements AutoCloseable{
 			
 			/* Syntactic relation */
 			this.createSRlen(sentence, node, "parent", "relate", section, 
-					sentenceNum, map, session);
+					sentenceNum, map, session, docId, type, year);
 			
 			/* Semantic relation */
 			this.createSRlen(sentence, node, "semparent", "semrelate", section, 
-					sentenceNum, map, session);
+					sentenceNum, map, session, docId, type, year);
 		}
 	}
 	
@@ -153,7 +160,8 @@ public class GraphBuilder implements AutoCloseable{
 	
 	private void createSRlen(JSONArray sentence, JSONObject node, String 
 			parentField, String relateField, String section, int sentenceNum, 
-			HashMap<Integer, Integer> map, Session session) {
+			HashMap<Integer, Integer> map, Session session, String docId, String 
+			type, int year) {
 		if(node.getInt(parentField) == -1) {
 			session.run(String.format(SRELN, map.get(new Integer(-1)), map.get(new 
 					Integer(node.getInt("id"))), node.getString(relateField)));
@@ -165,7 +173,7 @@ public class GraphBuilder implements AutoCloseable{
 		if(!map.containsKey(new Integer(parent.getInt("id")))) {
 			session.run(String.format(WORDNODE, section, parent.getString("pos"), 
 					parent.getString("ne"), uid, parent.getInt("id"), 
-					parent.getString("cont"), sentenceNum));
+					parent.getString("cont"), sentenceNum, docId, type, year));
 			map.put(parent.getInt("id"), uid++);
 		}
 		
@@ -183,7 +191,8 @@ public class GraphBuilder implements AutoCloseable{
 		try (GraphBuilder builder = new GraphBuilder("bolt://localhost:7687",
 				"neo4j", "sdsc123", "api.key")){
 			builder.ingest("巴希尔强调，政府坚决主张通过和平和政治途径结束目前的武装冲突，在全国实现和平。"
-				+ "他强烈呼吁以约翰·加朗为首的反政府武装力量回到国家的怀抱。在谈到周边关系时，巴希尔说，苏丹政府将采取行动改善与周边国家的关系。", "news");
+				+ "他强烈呼吁以约翰·加朗为首的反政府武装力量回到国家的怀抱。在谈到周边关系时，巴希尔说，苏丹政府将采取行动改善与周边国家的关系。", 
+				"news", "001", "poli", 2010);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}

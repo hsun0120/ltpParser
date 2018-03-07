@@ -31,14 +31,14 @@ public class GraphBuilderRunner {
 				for(int i = 0; i < facts.length(); i++) {
 					text += facts.getString(i);
 				}
-				//TODO: call graph builder with those params
+				gb.ingest(text, "facts", docId, type, year);
 				
 				JSONArray holding = json.getJSONArray("holding");
 				text = "";
 				for(int i = 0; i < holding.length(); i++) {
 					text += holding.getString(i);
 				}
-				//TODO: call graph builder with those params
+				gb.ingest(text, "holding", docId, type, year);
 				gb.close();
 			}
 		} catch (Exception e) {

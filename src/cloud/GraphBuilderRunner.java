@@ -29,14 +29,14 @@ public class GraphBuilderRunner {
 				JSONArray facts = json.getJSONArray("facts");
 				String text = "";
 				for(int i = 0; i < facts.length(); i++) {
-					text += facts.getString(i);
+					text += facts.getString(i).replace(" ", "");
 				}
 				gb.ingest(text, "facts", docId, type, year);
 				
 				JSONArray holding = json.getJSONArray("holding");
 				text = "";
 				for(int i = 0; i < holding.length(); i++) {
-					text += holding.getString(i);
+					text += holding.getString(i).replace(" ", "");
 				}
 				gb.ingest(text, "holding", docId, type, year);
 				gb.close();

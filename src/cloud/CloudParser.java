@@ -7,11 +7,14 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Scanner;
 
 import javax.net.ssl.HttpsURLConnection;
+
+import com.google.common.util.concurrent.RateLimiter;
 
 /**
  * A class that utilize ltp-cloud REST API to get syntactic parsing output.
@@ -23,6 +26,7 @@ public class CloudParser {
 	static final int MAX_LENGTH = 5000;
 
 	private String key = null;
+	private RateLimiter rl = null;
 
 	/**
 	 * Import api key from file.
@@ -34,6 +38,7 @@ public class CloudParser {
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();
 		}
+		this.rl = RateLimiter.create(3.0); //180 times per minute
 	}
 
 	/**
@@ -50,13 +55,15 @@ public class CloudParser {
 		for(String splitText: split) {
 			try {
 				URL base = new URL("https://api.ltp-cloud.com/analysis/");
+				this.rl.acquire();
 				HttpsURLConnection con = (HttpsURLConnection)base.openConnection();
 				con.setRequestMethod("POST");
 				con.setDoOutput(true); 
 				con.setDoInput(true);
 
 				DataOutputStream output = new DataOutputStream(con.getOutputStream());
-				String query = String.format(PARAM, this.key, splitText);
+				String query = String.format(PARAM, this.key, 
+						URLEncoder.encode(splitText, "utf-8"));
 				output.write(query.getBytes(StandardCharsets.UTF_8));
 				BufferedReader reader = new  BufferedReader(new InputStreamReader
 						(con.getInputStream(), StandardCharsets.UTF_8)); 

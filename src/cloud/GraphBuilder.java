@@ -18,11 +18,12 @@ import org.neo4j.driver.v1.Session;
  */
 public class GraphBuilder implements AutoCloseable{
 	static final int MAX_LENGTH = 5000;
-	static final String ROOT = "CREATE (n:Root:%s {uid: %d, idx: -1, "
-			+ "sentenceNum: %d})"; //Label: section
-	/* Labels: section, postag, ner  */
-	static final String WORDNODE = "MERGE (n:wordNode:%s:%s:`%s` {uid: %d, idx: "
-			+ "%d, text: '%s', sentenceNum: %d, docID: %s, type: %s, year: %d})";
+	static final String ROOT = "CREATE (n:Root {uid: %d, idx: -1, section: '%s', "
+			+ "sentenceNum: %d})";
+	/* Labels: postag, ner  */
+	static final String WORDNODE = "MERGE (n:wordNode:%s:`%s` {uid: %d, idx: %d, "
+			+ "text: '%s', section: '%s', sentenceNum: %d, docID: '%s', type: '%s', "
+			+ "year: %d})";
 	static final String NEXT_RELN = "MATCH (a {uid: %d}), (b {uid: %d}) MERGE "
 			+ "(a)-[:NEXT]->(b)";
 	static final String SRELN = "MATCH (a {uid: %d}), (b {uid: %d}) MERGE "
@@ -60,7 +61,7 @@ public class GraphBuilder implements AutoCloseable{
 			int year) {
 		if(text == null || text.length() == 0) return;
 		
-		ArrayList<String> parsed = this.preprocess(text);
+		ArrayList<String> parsed = this.parser.postRequest(text);
 		int sentenceNum = 0;
 		for(String json: parsed) { //Ingest each block of parsed text
 			JSONArray depGraphs = new JSONArray(json);
@@ -86,43 +87,20 @@ public class GraphBuilder implements AutoCloseable{
 		}
 	}
 	
-	private ArrayList<String> preprocess(String text) {
-		ArrayList<String> parsed = new ArrayList<>();
-		if(text.length() > MAX_LENGTH) {
-			String[] sentences = text.split("(?<=¡£)|(?<=£»)|(?<=£¿)");
-			StringBuilder buf = new StringBuilder();
-			int count = 0;
-			for(int i = 0; i < sentences.length; i++) {
-				if(count + sentences[i].length() <= MAX_LENGTH) { //Check length
-					count += sentences.length;
-					buf.append(sentences[i]);
-				} else {
-					/* Add parsing output */
-					parsed.add(this.parser.postRequest(buf.toString()));
-					count = sentences[i].length();
-					buf = new StringBuilder(); //Clear buffer
-					buf.append(sentences[i]);
-				}
-			}
-		} else
-			parsed.add(this.parser.postRequest(text));
-		return parsed;
-	}
-	
 	private void createRelns(JSONObject node, String section, JSONArray sentence,
 			int sentenceNum, String docId, String type, int year, HashMap<Integer, 
 			Integer> map) {
 		try (Session session = driver.session()) {
 			/* Create current node if not exists */
 			if(!map.containsKey(new Integer(node.getInt("id")))) {
-				session.run(String.format(WORDNODE, section, node.getString("pos"), 
+				session.run(String.format(WORDNODE, node.getString("pos"), 
 						node.getString("ne"), uid, node.getInt("id"), 
-						node.getString("cont"), sentenceNum));
+						node.getString("cont"), section, sentenceNum, docId, type, year));
 				map.put(node.getInt("id"), uid++);
 			}
 			
 			if(node.getInt("id") == 0) { //Create dummy root node
-				session.run(String.format(ROOT, section, uid, sentenceNum));
+				session.run(String.format(ROOT, uid, section, sentenceNum));
 				session.run(String.format(NEXT_RELN, uid, map.get(new Integer(0))));
 				map.put(-1, uid++);
 			}
@@ -131,9 +109,10 @@ public class GraphBuilder implements AutoCloseable{
 				/* Create next node if not exists */
 				JSONObject next = sentence.getJSONObject(node.getInt("id") + 1);
 				if(!map.containsKey(new Integer(next.getInt("id")))) {
-					session.run(String.format(WORDNODE, section, next.getString("pos"), 
+					session.run(String.format(WORDNODE, next.getString("pos"), 
 							next.getString("ne"), uid, next.getInt("id"), 
-							next.getString("cont"), sentenceNum));
+							next.getString("cont"), section, sentenceNum, docId, type, 
+							year));
 					map.put(next.getInt("id"), uid++);
 				}
 				
@@ -171,9 +150,9 @@ public class GraphBuilder implements AutoCloseable{
 		JSONObject parent = sentence.getJSONObject(node.getInt(parentField));
 		/* Create parent node if not exists */
 		if(!map.containsKey(new Integer(parent.getInt("id")))) {
-			session.run(String.format(WORDNODE, section, parent.getString("pos"), 
+			session.run(String.format(WORDNODE, parent.getString("pos"), 
 					parent.getString("ne"), uid, parent.getInt("id"), 
-					parent.getString("cont"), sentenceNum, docId, type, year));
+					parent.getString("cont"), section, sentenceNum, docId, type, year));
 			map.put(parent.getInt("id"), uid++);
 		}
 		

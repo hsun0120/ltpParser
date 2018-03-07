@@ -18,13 +18,14 @@ import org.neo4j.driver.v1.Session;
  */
 public class GraphBuilder implements AutoCloseable{
 	static final int MAX_LENGTH = 5000;
-	static final String WORDNODE = "MERGE (n:wordNode:%s:%s:%s {uid: %d, idx: %d"
-			+ ", text: '%s', sentenceNum: %d})"; //Labels: section, postag, ner 
-	static final String NEXT_RELN = "MATCH (a:wordNode {uid: %d}), (b:wordNode "
-			+ "{uid: %d}) MERGE (a)-[:NEXT]->(b)";
-	static final String NEW_LABEL = "MATCH (n:wordNode {uid %d}) set n: ROOT";
-	static final String SRELN = "MATCH (a:wordNode {uid: %d}), (b:wordNode "
-			+ "{uid: %d}) MERGE (a)-[:%s]->(b)"; //Syntactic or semantic relation
+	static final String ROOT = "CREATE (n:Root:%s {uid: %d, idx: -1, "
+			+ "sentenceNum: %d})"; //Label: section
+	static final String WORDNODE = "MERGE (n:wordNode:%s:%s:`%s` {uid: %d, idx: "
+			+ "%d, text: '%s', sentenceNum: %d})"; //Labels: section, postag, ner 
+	static final String NEXT_RELN = "MATCH (a {uid: %d}), (b {uid: %d}) MERGE "
+			+ "(a)-[:NEXT]->(b)";
+	static final String SRELN = "MATCH (a {uid: %d}), (b {uid: %d}) MERGE "
+			+ "(a)-[:%s]->(b)"; //Syntactic or semantic relation
 	
 	private final Driver driver;
 	private CloudParser parser;
@@ -58,19 +59,23 @@ public class GraphBuilder implements AutoCloseable{
 		int sentenceNum = 0;
 		for(String json: parsed) { //Ingest each block of parsed text
 			JSONArray depGraphs = new JSONArray(json);
-			for(int i = 0; i < depGraphs.length(); i++) { //Assuming sentence level
-				JSONArray sentence = depGraphs.getJSONArray(i);
-				/* Storing node uid and its index in the sentence */
-				HashMap<Integer, Integer> map = new HashMap<>();
-				ArrayList<JSONObject> srl = new ArrayList<>();
-				for(int j = 0; j < sentence.length(); j++) {
-					JSONObject node = sentence.getJSONObject(j);
-					this.createRelns(node, section, sentence, sentenceNum, map);
-					if(node.getJSONArray("arg").length() > 0)
-						srl.add(node);
+			for(int i = 0; i < depGraphs.length(); i++) { //Iterate over paragraphs
+				JSONArray paragraph = depGraphs.getJSONArray(i);
+				for(int j = 0; j < paragraph.length(); j++) { //Iterate over a sentence
+					JSONArray sentence = paragraph.getJSONArray(j);
+					/* Storing node uid and its index in the sentence */
+					HashMap<Integer, Integer> map = new HashMap<>();
+					ArrayList<JSONObject> srl = new ArrayList<>();
+					/* Iterate over a sentence */
+					for(int k = 0; k < sentence.length(); k++) {
+						JSONObject node = sentence.getJSONObject(k);
+						this.createRelns(node, section, sentence, sentenceNum, map);
+						if(node.getJSONArray("arg").length() > 0)
+							srl.add(node);
+					}
+					this.createSRL(sentence, srl, section, sentenceNum);
+					sentenceNum++;
 				}
-				this.createSRL(sentence, srl, section, sentenceNum);
-				sentenceNum++;
 			}
 		}
 	}
@@ -109,13 +114,19 @@ public class GraphBuilder implements AutoCloseable{
 				map.put(node.getInt("id"), uid++);
 			}
 			
+			if(node.getInt("id") == 0) { //Create dummy root node
+				session.run(String.format(ROOT, section, uid, sentenceNum));
+				session.run(String.format(NEXT_RELN, uid, map.get(new Integer(0))));
+				map.put(-1, uid++);
+			}
+			
 			if(node.getInt("id") < sentence.length() - 1) { //If not last node
 				/* Create next node if not exists */
 				JSONObject next = sentence.getJSONObject(node.getInt("id") + 1);
 				if(!map.containsKey(new Integer(next.getInt("id")))) {
 					session.run(String.format(WORDNODE, section, next.getString("pos"), 
-							node.getString("ne"), uid, next.getInt("id"), 
-							node.getString("cont"), sentenceNum));
+							next.getString("ne"), uid, next.getInt("id"), 
+							next.getString("cont"), sentenceNum));
 					map.put(next.getInt("id"), uid++);
 				}
 				
@@ -125,18 +136,12 @@ public class GraphBuilder implements AutoCloseable{
 			}
 			
 			/* Syntactic relation */
-			if(node.getInt("parent") == -1) //If HED or ROOT, just add a label
-				session.run(String.format(NEW_LABEL, map.get(new 
-						Integer(node.getInt("id")).intValue())));
-			else if(!map.containsKey(node.getInt("parent")))
-				this.createSRlen(sentence, node, "parent", "relate", section, 
-						sentenceNum, map, session);
+			this.createSRlen(sentence, node, "parent", "relate", section, 
+					sentenceNum, map, session);
 			
 			/* Semantic relation */
-			if(node.getInt("semparent") != -1 && 
-					!map.containsKey(node.getInt("semparent")))
-				this.createSRlen(sentence, node, "semparent", "semrelate", section, 
-						sentenceNum, map, session);
+			this.createSRlen(sentence, node, "semparent", "semrelate", section, 
+					sentenceNum, map, session);
 		}
 	}
 	
@@ -149,12 +154,18 @@ public class GraphBuilder implements AutoCloseable{
 	private void createSRlen(JSONArray sentence, JSONObject node, String 
 			parentField, String relateField, String section, int sentenceNum, 
 			HashMap<Integer, Integer> map, Session session) {
+		if(node.getInt(parentField) == -1) {
+			session.run(String.format(SRELN, map.get(new Integer(-1)), map.get(new 
+					Integer(node.getInt("id"))), node.getString(relateField)));
+			return;
+		}
+		
 		JSONObject parent = sentence.getJSONObject(node.getInt(parentField));
 		/* Create parent node if not exists */
 		if(!map.containsKey(new Integer(parent.getInt("id")))) {
 			session.run(String.format(WORDNODE, section, parent.getString("pos"), 
-					node.getString("ne"), uid, parent.getInt("id"), 
-					node.getString("cont"), sentenceNum));
+					parent.getString("ne"), uid, parent.getInt("id"), 
+					parent.getString("cont"), sentenceNum));
 			map.put(parent.getInt("id"), uid++);
 		}
 		
@@ -168,4 +179,13 @@ public class GraphBuilder implements AutoCloseable{
 		this.driver.close();
 	}
 	
+	public static void main(String args[]) {
+		try (GraphBuilder builder = new GraphBuilder("bolt://localhost:7687",
+				"neo4j", "sdsc123", "api.key")){
+			builder.ingest("巴希尔强调，政府坚决主张通过和平和政治途径结束目前的武装冲突，在全国实现和平。"
+				+ "他强烈呼吁以约翰·加朗为首的反政府武装力量回到国家的怀抱。在谈到周边关系时，巴希尔说，苏丹政府将采取行动改善与周边国家的关系。", "news");
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
 }

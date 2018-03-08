@@ -28,7 +28,11 @@ public class GraphBuilder implements AutoCloseable{
 			+ "(a)-[:NEXT]->(b)";
 	static final String SRELN = "MATCH (a {uid: %d}), (b {uid: %d}) MERGE "
 			+ "(a)-[:%s]->(b)"; //Syntactic or semantic relation
-	
+	static final String PHRASENODE = "MERGE (n:phraseNode:%s {uid: %d, idx: %d, "
+			+ "beg: %d, end: %d, text: '%s', sentenceNum: %d, section: '%s'})";
+	static final String VERBNODE = "MERGE (n:verbNode:%s {uid: %d, idx: %d, "
+			+ "sentenceNum: %d, section: '%s'})";
+
 	private final Driver driver;
 	private CloudParser parser;
 	private int uid;
@@ -92,49 +96,95 @@ public class GraphBuilder implements AutoCloseable{
 			Integer> map) {
 		try (Session session = driver.session()) {
 			/* Create current node if not exists */
-			if(!map.containsKey(new Integer(node.getInt("id")))) {
-				session.run(String.format(WORDNODE, node.getString("pos"), 
-						node.getString("ne"), uid, node.getInt("id"), 
+			if (!map.containsKey(new Integer(node.getInt("id")))) {
+				session.run(String.format(WORDNODE, node.getString("pos"),
+						node.getString("ne"), uid, node.getInt("id"),
 						node.getString("cont"), section, sentenceNum, docId, type, year));
 				map.put(node.getInt("id"), uid++);
 			}
-			
-			if(node.getInt("id") == 0) { //Create dummy root node
+
+			if (node.getInt("id") == 0) { //Create dummy root node
 				session.run(String.format(ROOT, uid, section, sentenceNum));
 				session.run(String.format(NEXT_RELN, uid, map.get(new Integer(0))));
 				map.put(-1, uid++);
 			}
-			
-			if(node.getInt("id") < sentence.length() - 1) { //If not last node
+
+			if (node.getInt("id") < sentence.length() - 1) { //If not last node
 				/* Create next node if not exists */
 				JSONObject next = sentence.getJSONObject(node.getInt("id") + 1);
-				if(!map.containsKey(new Integer(next.getInt("id")))) {
-					session.run(String.format(WORDNODE, next.getString("pos"), 
-							next.getString("ne"), uid, next.getInt("id"), 
-							next.getString("cont"), section, sentenceNum, docId, type, 
+				if (!map.containsKey(new Integer(next.getInt("id")))) {
+					session.run(String.format(WORDNODE, next.getString("pos"),
+							next.getString("ne"), uid, next.getInt("id"),
+							next.getString("cont"), section, sentenceNum, docId, type,
 							year));
 					map.put(next.getInt("id"), uid++);
 				}
-				
-				session.run(String.format(NEXT_RELN, map.get(new 
-						Integer(node.getInt("id"))), map.get(new 
-								Integer(next.getInt("id"))))); //Connect to next node
+
+				session.run(String.format(NEXT_RELN, map.get(new
+						Integer(node.getInt("id"))), map.get(new
+						Integer(next.getInt("id"))))); //Connect to next node
 			}
 			
 			/* Syntactic relation */
-			this.createSRlen(sentence, node, "parent", "relate", section, 
+			this.createSRlen(sentence, node, "parent", "relate", section,
 					sentenceNum, map, session, docId, type, year);
 			
 			/* Semantic relation */
-			this.createSRlen(sentence, node, "semparent", "semrelate", section, 
+			this.createSRlen(sentence, node, "semparent", "semrelate", section,
 					sentenceNum, map, session, docId, type, year);
 		}
 	}
-	
+
 	//TODO
 	private void createSRL(JSONArray sentence, ArrayList<JSONObject> srl, 
 			String section, int sentenceNum) {
 		HashMap<Interval, Integer> map = new HashMap<>();
+		try(Session session = driver.session()) {
+			/* For each item */
+			for(JSONObject item : srl) {
+				JSONArray arg = item.getJSONArray("arg");
+
+				/* For each arg in arg array */
+				for(int i=0; 1<arg.length(); i++) {
+					JSONObject label = arg.getJSONObject(i);
+					Interval interval = new Interval(label.getInt("beg"), label.getInt("end"));
+
+					/* Build phrase */
+					String phrase = "";
+					for(int j=interval.getStart(); j<=interval.getEnd(); j++) {
+						JSONObject term = sentence.getJSONObject(j);
+						phrase = phrase + term.getString("cont");
+					}
+
+					/* Create new node if does not exist already */
+					if(!map.containsKey(interval)) {
+						session.run(String.format(PHRASENODE, label.getString("type"), uid,
+								label.getInt("id"), label.getInt("beg"),
+								label.getInt("end"), phrase, sentenceNum, section));
+						map.put(interval, uid++);
+					}
+
+					/* Move to next node if this is the first node */
+					if(i == 0) continue;
+
+					/* Node comes before verb */
+					if(interval.getEnd() < item.getInt("id")) {
+						/* Connect to previous node */
+						JSONObject prevLabel = arg.getJSONObject(i-1);
+						Interval prevInterval = new Interval(prevLabel.getInt("beg"),
+								prevLabel.getInt("end"));
+						session.run(String.format(NEXT_RELN, map.get(prevInterval), map.get(interval)));
+
+					/* Node comes after verb */
+					} else {
+						/* Create and connect with the verb node */
+						session.run(String.format(VERBNODE, item.getString("cont"), uid,
+								item.getInt("id"), sentenceNum, section));
+						session.run(String.format(NEXT_RELN, uid++, map.get(interval)));
+					}
+				} // end arg
+			} // end srl
+		} // end session
 	}
 	
 	private void createSRlen(JSONArray sentence, JSONObject node, String 
@@ -181,13 +231,21 @@ public class GraphBuilder implements AutoCloseable{
 					((Interval) o).end == this.end) return true;
 			return false;
 		}
+
+		public int getStart() {
+			return this.start;
+		}
+
+		public int getEnd() {
+			return this.end;
+		}
 	}
 	
 	public static void main(String args[]) {
 		try (GraphBuilder builder = new GraphBuilder("bolt://localhost:7687",
 				"neo4j", "sdsc123", "api.key")){
-			builder.ingest("°ÍÏ£¶ûÇ¿µ÷£¬Õþ¸®¼á¾öÖ÷ÕÅÍ¨¹ýºÍÆ½ºÍÕþÖÎÍ¾¾¶½áÊøÄ¿Ç°µÄÎä×°³åÍ»£¬ÔÚÈ«¹úÊµÏÖºÍÆ½¡£"
-				+ "ËûÇ¿ÁÒºôÓõÒÔÔ¼º²¡¤¼ÓÀÊÎªÊ×µÄ·´Õþ¸®Îä×°Á¦Á¿»Øµ½¹ú¼ÒµÄ»³±§¡£ÔÚÌ¸µ½ÖÜ±ß¹ØÏµÊ±£¬°ÍÏ£¶ûËµ£¬ËÕµ¤Õþ¸®½«²ÉÈ¡ÐÐ¶¯¸ÄÉÆÓëÖÜ±ß¹ú¼ÒµÄ¹ØÏµ¡£", 
+			builder.ingest("ï¿½ï¿½Ï£ï¿½ï¿½Ç¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¨ï¿½ï¿½ï¿½ï¿½Æ½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¿Ç°ï¿½ï¿½ï¿½ï¿½×°ï¿½ï¿½Í»ï¿½ï¿½ï¿½ï¿½È«ï¿½ï¿½Êµï¿½Öºï¿½Æ½ï¿½ï¿½"
+				+ "ï¿½ï¿½Ç¿ï¿½Òºï¿½ï¿½ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Îªï¿½×µÄ·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×°ï¿½ï¿½ï¿½ï¿½ï¿½Øµï¿½ï¿½ï¿½ï¿½ÒµÄ»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì¸ï¿½ï¿½ï¿½Ü±ß¹ï¿½ÏµÊ±ï¿½ï¿½ï¿½ï¿½Ï£ï¿½ï¿½Ëµï¿½ï¿½ï¿½Õµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È¡ï¿½Ð¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ü±ß¹ï¿½ï¿½ÒµÄ¹ï¿½Ïµï¿½ï¿½", 
 				"news", "001", "poli", 2010);
 		} catch (Exception e) {
 			e.printStackTrace();

@@ -258,6 +258,11 @@ public class GraphBuilder implements AutoCloseable{
 			return false;
 		}
 
+		@Override
+		public int hashCode() {
+			return this.start + this.end;
+		}
+
 		public int getStart() {
 			return this.start;
 		}

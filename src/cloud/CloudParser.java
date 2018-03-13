@@ -87,7 +87,7 @@ public class CloudParser {
 			return split;
 		}
 		
-		String[] sentences = text.split("(?<=��)|(?<=��)|(?<=��)");
+		String[] sentences = text.split("(?<=��)|(?<=��)|(?<=��)");
 		StringBuilder buf = new StringBuilder();
 		int count = 0;
 		for(int i = 0; i < sentences.length; i++) {
@@ -108,8 +108,8 @@ public class CloudParser {
 	public static void main(String[] args) {
 		CloudParser ltpCloud = new CloudParser();
 		ltpCloud.importKey("api.key");
-		ArrayList<String> res = ltpCloud.postRequest("��ϣ��ǿ���������������ͨ����ƽ������;������Ŀǰ����װ��ͻ����ȫ��ʵ�ֺ�ƽ��"
-				+ "��ǿ�Һ�����Լ��������Ϊ�׵ķ�������װ�����ص����ҵĻ�������̸���ܱ߹�ϵʱ����ϣ��˵���յ���������ȡ�ж��������ܱ߹��ҵĹ�ϵ��");
+		ArrayList<String> res = ltpCloud.postRequest("巴希尔强调，政府坚决主张通过和平和政治途径结束目前的武装冲突，在全国实现和平。"
+				+ "他强烈呼吁以约翰·加朗为首的反政府武装力量回到国家的怀抱。在谈到周边关系时，巴希尔说，苏丹政府将采取行动改善与周边国家的关系。");
 		System.out.println(res);
 	}
 }

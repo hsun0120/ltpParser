@@ -30,8 +30,8 @@ public class GraphBuilder implements AutoCloseable{
 			+ "(a)-[:%s]->(b)"; //Syntactic or semantic relation
 	static final String PHRASENODE = "MERGE (n:phraseNode:%s {uid: %d, idx: %d, "
 			+ "beg: %d, end: %d, text: '%s', sentenceNum: %d, section: '%s'})";
-	static final String VERBNODE = "MERGE (n:verbNode:%s {uid: %d, idx: %d, "
-			+ "sentenceNum: %d, section: '%s'})";
+	static final String VERBNODE = "MERGE (n:verbNode {uid: %d, idx: %d, "
+			+ "text: '%s', sentenceNum: %d, section: '%s'})";
 
 	private final Driver driver;
 	private CloudParser parser;
@@ -140,12 +140,14 @@ public class GraphBuilder implements AutoCloseable{
 			String section, int sentenceNum) {
 		HashMap<Interval, Integer> map = new HashMap<>();
 		try(Session session = driver.session()) {
-			/* For each item */
+			/* For each verb */
 			for(JSONObject item : srl) {
 				JSONArray arg = item.getJSONArray("arg");
+				boolean verbed = false;
+				System.out.println(item.getString("cont"));
 
 				/* For each arg in arg array */
-				for(int i=0; 1<arg.length(); i++) {
+				for(int i=0; i<arg.length(); i++) {
 					JSONObject label = arg.getJSONObject(i);
 					Interval interval = new Interval(label.getInt("beg"), label.getInt("end"));
 
@@ -164,23 +166,47 @@ public class GraphBuilder implements AutoCloseable{
 						map.put(interval, uid++);
 					}
 
-					/* Move to next node if this is the first node */
-					if(i == 0) continue;
+					if(i == 0) {
+						/* Special case where verb comes before the first node */
+						if(interval.getStart() > item.getInt("id")) {
+							session.run(String.format(VERBNODE, uid, item.getInt("id"),
+									item.getString("cont"), sentenceNum, section));
+							session.run(String.format(NEXT_RELN, uid++, map.get(interval)));
+							verbed = true;
 
-					/* Node comes before verb */
-					if(interval.getEnd() < item.getInt("id")) {
-						/* Connect to previous node */
-						JSONObject prevLabel = arg.getJSONObject(i-1);
-						Interval prevInterval = new Interval(prevLabel.getInt("beg"),
-								prevLabel.getInt("end"));
-						session.run(String.format(NEXT_RELN, map.get(prevInterval), map.get(interval)));
+						/* Only one phraseNode, so append verbNode to the end*/
+						} else if(arg.length() == 1){
+							session.run(String.format(VERBNODE, uid, item.getInt("id"),
+									item.getString("cont"), sentenceNum, section));
+							session.run(String.format(NEXT_RELN, map.get(interval), uid++));
+							verbed = true;
+						}
+						continue;
+					}
 
-					/* Node comes after verb */
-					} else {
-						/* Create and connect with the verb node */
-						session.run(String.format(VERBNODE, item.getString("cont"), uid,
-								item.getInt("id"), sentenceNum, section));
+					JSONObject prevLabel = arg.getJSONObject(i-1);
+					Interval prevInterval = new Interval(prevLabel.getInt("beg"),
+							prevLabel.getInt("end"));
+
+					/* If verbNode is not created and it comes before current phraseNode */
+					if(verbed == false && interval.getEnd() > item.getInt("id")) {
+						session.run(String.format(VERBNODE, uid, item.getInt("id"),
+								item.getString("cont"), sentenceNum, section));
+						session.run(String.format(NEXT_RELN, map.get(prevInterval), uid));
 						session.run(String.format(NEXT_RELN, uid++, map.get(interval)));
+						verbed = true;
+
+					/* Otherwise connect to previous node */
+					} else {
+						session.run(String.format(NEXT_RELN, map.get(prevInterval), map.get(interval)));
+					}
+
+					/* Special case where verb comes after the last node */
+					if(verbed == false && i == arg.length()-1) {
+						session.run(String.format(VERBNODE, uid, item.getInt("id"),
+								item.getString("cont"), sentenceNum, section));
+						session.run(String.format(NEXT_RELN, map.get(interval), uid++));
+						verbed = true;
 					}
 				} // end arg
 			} // end srl
@@ -244,8 +270,7 @@ public class GraphBuilder implements AutoCloseable{
 	public static void main(String args[]) {
 		try (GraphBuilder builder = new GraphBuilder("bolt://localhost:7687",
 				"neo4j", "sdsc123", "api.key")){
-			builder.ingest("��ϣ��ǿ���������������ͨ����ƽ������;������Ŀǰ����װ��ͻ����ȫ��ʵ�ֺ�ƽ��"
-				+ "��ǿ�Һ�����Լ��������Ϊ�׵ķ�������װ�����ص����ҵĻ�������̸���ܱ߹�ϵʱ����ϣ��˵���յ���������ȡ�ж��������ܱ߹��ҵĹ�ϵ��", 
+			builder.ingest("巴希尔强调，政府坚决主张通过和平和政治途径结束目前的武装冲突，在全国实现和平。他强烈呼吁以约翰·加朗为首的反政府武装力量回到国家的怀抱。在谈到周边关系时，巴希尔说，苏丹政府将采取行动改善与周边国家的关系。",
 				"news", "001", "poli", 2010);
 		} catch (Exception e) {
 			e.printStackTrace();
